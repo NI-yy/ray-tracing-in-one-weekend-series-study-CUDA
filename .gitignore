@@ -1,0 +1,17 @@
+﻿out/
+build/
+cmake-build-debug/
+cmake-build-release/
+.vs/
+.vscode/
+*.user
+*.suo
+*.pdb
+*.obj
+*.exe
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CMakeUserPresets.json
+.DS_Store
+Thumbs.db
