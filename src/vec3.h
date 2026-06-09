@@ -110,7 +110,7 @@ inline vec3 unit_vector(const vec3& v) {
 	return v / v.length();
 }
 
-inline vec3 random_in_unit_disk() {
+vec3 random_in_unit_disk() {
 	while (true) {
 		auto p = vec3(random_double(-1, 1), random_double(-1, 1), 0);
 		if (p.length_squared() < 1) {
@@ -135,18 +135,6 @@ inline vec3 random_on_hemisphere(const vec3& normal) {
 		return on_unit_sphere;
 	else
 		return -on_unit_sphere;
-}
-
-inline vec3 random_cosine_direction() {
-	auto r1 = random_double();
-	auto r2 = random_double();
-
-	auto phi = 2 * pi * r1;
-	auto x = std::cos(phi) * std::sqrt(r2);
-	auto y = std::sin(phi) * std::sqrt(r2);
-	auto z = std::sqrt(1 - r2);
-
-	return vec3(x, y, z);
 }
 
 inline vec3 reflect(const vec3& v, const vec3& n) {
