@@ -1,6 +1,8 @@
 #ifndef CAMERA_H
 #define CAMERA_H
 
+#include <chrono>
+
 #include "hittable.h"
 #include "material.h"
 
@@ -22,6 +24,17 @@ class camera {
 		void render(const hittable& world) {
 			initialize();
 
+			const auto render_start = std::chrono::high_resolution_clock::now();
+			const auto total_pixels = static_cast<long long>(image_width) * image_height;
+			const auto total_samples = total_pixels * samples_per_pixel;
+
+			std::clog
+				<< "Render settings:\n"
+				<< "  image: " << image_width << "x" << image_height << '\n'
+				<< "  samples_per_pixel: " << samples_per_pixel << '\n'
+				<< "  max_depth: " << max_depth << '\n'
+				<< "  total primary samples: " << total_samples << "\n\n";
+
 			
 			std::ofstream image_file("image.ppm");
 			image_file << "P3\n" << image_width << ' ' << image_height << "\n255\n";
@@ -41,7 +54,17 @@ class camera {
 			}
 
 
-			std::clog << "\nDone.\n";
+			image_file.close();
+
+			const auto render_end = std::chrono::high_resolution_clock::now();
+			const std::chrono::duration<double> elapsed = render_end - render_start;
+			const auto elapsed_seconds = elapsed.count();
+
+			std::clog
+				<< "\nDone.\n"
+				<< "Render time: " << elapsed_seconds << " seconds\n"
+				<< "Pixels/sec: " << (total_pixels / elapsed_seconds) << '\n'
+				<< "Primary samples/sec: " << (total_samples / elapsed_seconds) << '\n';
 		}
 
 	private:
