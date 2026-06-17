@@ -17,6 +17,7 @@ CMakeCache.txt
 cmake_install.cmake
 CMakeUserPresets.json
 image.ppm
+image_cuda.ppm
 image_test.png
 .DS_Store
 Thumbs.db

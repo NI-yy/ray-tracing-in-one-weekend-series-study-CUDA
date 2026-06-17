@@ -6,7 +6,15 @@
 #include "material.h"
 #include "sphere.h"
 
+#ifdef RTWEEKEND_CUDA_ENABLED
+#include "cuda_renderer.h"
+#endif
+
 int main() {
+#ifdef RTWEEKEND_CUDA_ENABLED
+    render_cuda_gradient("image_cuda.ppm", 200, 112);
+#endif
+
     hittable_list world;
 
     auto ground_material = make_shared<lambertian>(color(0.5, 0.5, 0.5));
