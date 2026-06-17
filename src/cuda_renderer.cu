@@ -15,7 +15,7 @@ struct rgb {
     unsigned char b;
 };
 
-__global__ void gradient_kernel(rgb* pixels, int image_width, int image_height) {
+__global__ void background_gradient_kernel(rgb* pixels, int image_width, int image_height) {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -23,13 +23,15 @@ __global__ void gradient_kernel(rgb* pixels, int image_width, int image_height) 
         return;
 
     const int index = y * image_width + x;
-    const double r = static_cast<double>(x) / (image_width - 1);
-    const double g = static_cast<double>(y) / (image_height - 1);
+    const double t = static_cast<double>(y) / (image_height - 1);
+    const double r = (1.0 - t) * 0.5 + t * 1.0;
+    const double g = (1.0 - t) * 0.7 + t * 1.0;
+    const double b = 1.0;
 
     pixels[index] = rgb{
         static_cast<unsigned char>(255.999 * r),
         static_cast<unsigned char>(255.999 * g),
-        0
+        static_cast<unsigned char>(255.999 * b)
     };
 }
 
@@ -80,10 +82,10 @@ bool render_cuda_gradient(const char* output_path, int image_width, int image_he
         (image_height + block_size.y - 1) / block_size.y
     );
 
-    gradient_kernel<<<block_count, block_size>>>(device_pixels, image_width, image_height);
+    background_gradient_kernel<<<block_count, block_size>>>(device_pixels, image_width, image_height);
 
     bool ok = true;
-    ok = ok && check_cuda(cudaGetLastError(), "gradient_kernel launch");
+    ok = ok && check_cuda(cudaGetLastError(), "background_gradient_kernel launch");
     ok = ok && check_cuda(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
 
     std::vector<rgb> host_pixels(pixel_count);
