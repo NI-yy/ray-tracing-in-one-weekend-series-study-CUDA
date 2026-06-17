@@ -1,101 +1,101 @@
-# CUDA Setup Notes
+# CUDA 化準備メモ
 
-This note summarizes the preparation work done before starting the actual CUDA renderer implementation.
+このメモは、実際に CUDA でレンダラを書き始める前に行った準備作業をまとめたものです。
 
-## Starting Point
+## 開始時点
 
-- Created a separate CUDA study repository from the original CPU ray tracer.
-- Reset the CUDA repository to the early "first rendered image" state of the original project.
-- Kept the scene small enough to make CUDA migration easier.
+- 元の CPU 版レイトレーサから、CUDA 学習用の別リポジトリを作成した。
+- CUDA 側のリポジトリは、元リポジトリの「最初のレンダリング画像が出た段階」のコミットに戻した。
+- 最終版のコードは複雑なので、CUDA 化しやすい小さな状態から始める方針にした。
 
-## CPU Baseline
+## CPU 版の基準値
 
-The CPU renderer was reduced to a lightweight debug render:
+動作確認しやすいように、CPU 版のレンダリング設定を軽くした。
 
-- Image size: 200 x 112
-- Samples per pixel: 5
-- Max depth: 10
-- Total primary samples: 112,000
+- 画像サイズ: 200 x 112
+- サンプル数: 5 samples per pixel
+- 最大反射回数: 10
+- 合計 primary sample 数: 112,000
 
-Measured result:
+計測結果:
 
-- Render time: 5.88546 seconds
+- レンダリング時間: 5.88546 秒
 - Pixels/sec: 3,805.99
 - Primary samples/sec: 19,029.9
 
-Timing was added in `camera::render()` using `std::chrono`.
+計測処理は `camera::render()` に `std::chrono` を使って追加した。
 
 ## CUDA Toolkit
 
-Installed CUDA Toolkit 13.3.
+CUDA Toolkit 13.3 をインストールした。
 
-Confirmed `nvcc`:
+`nvcc` の確認:
 
 ```powershell
 nvcc --version
 ```
 
-Result:
+結果:
 
 ```text
 Cuda compilation tools, release 13.3, V13.3.33
 ```
 
-`nvcc` is the NVIDIA CUDA compiler. It compiles `.cu` files and device code that runs on the GPU.
+`nvcc` は NVIDIA CUDA Compiler のことで、`.cu` ファイルや GPU 上で動く device code をコンパイルするためのコンパイラ。
 
-## Visual Studio Compiler
+## Visual Studio の C++ コンパイラ
 
-CUDA on Windows also needs the Microsoft C++ compiler, `cl.exe`.
+Windows で CUDA を使う場合、CUDA Toolkit だけでなく Microsoft C++ コンパイラの `cl.exe` も必要になる。
 
-In a normal PowerShell session, `cl` was not visible. However, it worked after loading the Visual Studio developer environment:
+通常の PowerShell では `cl` が見えなかったが、Visual Studio の開発環境を読み込むと使えることを確認した。
 
 ```powershell
 cmd /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 && cl && nvcc --version'
 ```
 
-Confirmed environment:
+確認できた環境:
 
 - Visual Studio 2026 Community
 - MSVC 19.51
 - CUDA 13.3
 
-## CMake Changes
+## CMake の変更
 
-Updated `CMakeLists.txt` so CUDA is optional:
+`CMakeLists.txt` を更新し、CUDA を optional にした。
 
-- `USE_CUDA` option added.
-- CMake checks whether a CUDA compiler exists.
-- If CUDA is found, CUDA language support is enabled.
-- If CUDA is not found, the project still builds as CPU-only.
+- `USE_CUDA` オプションを追加した。
+- CMake が CUDA compiler の有無を確認するようにした。
+- CUDA が見つかった場合だけ CUDA language support を有効化する。
+- CUDA が見つからない環境でも CPU 版としてビルドできるようにした。
 
-This keeps the project usable even on machines without CUDA.
+これにより、CUDA がない PC でもプロジェクト自体は壊れずに使える。
 
-## NMake CUDA Build
+## NMake での CUDA ビルド
 
-Because the installed CMake did not provide a `Visual Studio 18 2026` generator, the project was configured with `NMake Makefiles` inside the Visual Studio developer environment.
+この環境の CMake には `Visual Studio 18 2026` ジェネレータがなかったため、Visual Studio 開発環境を読み込んだ上で `NMake Makefiles` を使った。
 
-Configure:
+構成:
 
 ```powershell
 cmd /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 && cmake -S . -B build_nmake_cuda -G "NMake Makefiles"'
 ```
 
-Build:
+ビルド:
 
 ```powershell
 cmd /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 && cmake --build build_nmake_cuda'
 ```
 
-Confirmed:
+確認結果:
 
 ```text
 CUDA support enabled
 [100%] Built target inOneWeekend
 ```
 
-## Current Status
+## 現在の状態
 
-- CPU renderer still runs.
-- CUDA compiler is detected through the Visual Studio developer environment.
-- No CUDA rendering code has been implemented yet.
-- Next step: add a minimal `.cu` file and render a simple GPU-generated gradient image.
+- CPU 版レンダラは引き続き動作する。
+- Visual Studio 開発環境を読み込めば、CMake から CUDA compiler を検出できる。
+- まだ CUDA でのレンダリング処理は実装していない。
+- 次の作業は、最小の `.cu` ファイルを追加して、GPU 側で単純なグラデーション画像を生成すること。
