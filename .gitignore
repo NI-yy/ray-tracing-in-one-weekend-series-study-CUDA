@@ -21,6 +21,8 @@ image_cuda.ppm
 image_cuda.png
 image_cuda_sphere.ppm
 image_cuda_sphere.png
+image_cuda_spheres.ppm
+image_cuda_spheres.png
 image_test.png
 .DS_Store
 Thumbs.db

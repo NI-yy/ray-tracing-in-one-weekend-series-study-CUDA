@@ -12,7 +12,7 @@
 
 int main() {
 #ifdef RTWEEKEND_CUDA_ENABLED
-    render_cuda_single_sphere("image_cuda_sphere.ppm", 200, 112);
+    render_cuda_multiple_spheres("image_cuda_spheres.ppm", 200, 112);
 #endif
 
     hittable_list world;
