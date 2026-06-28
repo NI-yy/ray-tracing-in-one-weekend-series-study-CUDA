@@ -19,6 +19,8 @@ CMakeUserPresets.json
 image.ppm
 image_cuda.ppm
 image_cuda.png
+image_cuda_sphere.ppm
+image_cuda_sphere.png
 image_test.png
 .DS_Store
 Thumbs.db
