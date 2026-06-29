@@ -28,9 +28,9 @@ CPU 版と CUDA 版を、次の条件にそろえて比較しました。
 
 計測結果:
 
-- CUDA render time: 約 0.25 秒
-- CUDA primary samples/sec: 約 1,826,000
-- CPU render time: 約 1.05 秒
-- CPU primary samples/sec: 約 426,644
+- CUDA render time: 約 0.28 秒
+- CUDA primary samples/sec: 約 1,579,000
+- CPU render time: 約 1.12 秒
+- CPU primary samples/sec: 約 399,276
 
 詳細な作業ログは `CUDA_SETUP_NOTES.md` にまとめています。

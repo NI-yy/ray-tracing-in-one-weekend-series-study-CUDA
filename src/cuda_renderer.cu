@@ -26,6 +26,13 @@ struct cuda_ray {
     cuda_vec3 direction;
 };
 
+struct cuda_camera {
+    cuda_vec3 center;
+    cuda_vec3 pixel00_loc;
+    cuda_vec3 pixel_delta_u;
+    cuda_vec3 pixel_delta_v;
+};
+
 struct cuda_sphere {
     cuda_vec3 center;
     double radius;
@@ -89,6 +96,14 @@ __host__ __device__ double dot(const cuda_vec3& a, const cuda_vec3& b) {
     return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
+__host__ __device__ cuda_vec3 cross(const cuda_vec3& a, const cuda_vec3& b) {
+    return make_vec3(
+        a.y * b.z - a.z * b.y,
+        a.z * b.x - a.x * b.z,
+        a.x * b.y - a.y * b.x
+    );
+}
+
 __host__ __device__ double length(const cuda_vec3& v) {
     return sqrt(dot(v, v));
 }
@@ -129,6 +144,39 @@ __host__ __device__ double clamp(double x, double min_value, double max_value) {
 
 __host__ __device__ cuda_vec3 ray_at(const cuda_ray& ray, double t) {
     return ray.origin + t * ray.direction;
+}
+
+__host__ __device__ double degrees_to_radians(double degrees) {
+    return degrees * 3.1415926535897932385 / 180.0;
+}
+
+__host__ cuda_camera make_camera(
+    int image_width,
+    int image_height,
+    double vfov,
+    const cuda_vec3& lookfrom,
+    const cuda_vec3& lookat,
+    const cuda_vec3& vup,
+    double focus_dist
+) {
+    const double theta = degrees_to_radians(vfov);
+    const double h = tan(theta / 2.0);
+    const double viewport_height = 2.0 * h * focus_dist;
+    const double viewport_width = viewport_height * (static_cast<double>(image_width) / image_height);
+
+    const cuda_vec3 w = unit_vector(lookfrom - lookat);
+    const cuda_vec3 u = unit_vector(cross(vup, w));
+    const cuda_vec3 v = cross(w, u);
+
+    const cuda_vec3 viewport_u = viewport_width * u;
+    const cuda_vec3 viewport_v = viewport_height * -v;
+    const cuda_vec3 pixel_delta_u = viewport_u / image_width;
+    const cuda_vec3 pixel_delta_v = viewport_v / image_height;
+    const cuda_vec3 viewport_upper_left =
+        lookfrom - focus_dist * w - viewport_u / 2.0 - viewport_v / 2.0;
+    const cuda_vec3 pixel00_loc = viewport_upper_left + 0.5 * (pixel_delta_u + pixel_delta_v);
+
+    return cuda_camera{lookfrom, pixel00_loc, pixel_delta_u, pixel_delta_v};
 }
 
 __host__ __device__ rgb to_rgb(const cuda_vec3& color, double scale = 1.0) {
@@ -237,6 +285,12 @@ __device__ cuda_vec3 shade_with_simple_light(const hit_record& rec) {
     return (ambient + 0.75 * diffuse) * rec.albedo;
 }
 
+__device__ cuda_ray get_camera_ray(
+    const cuda_camera& camera,
+    int x,
+    int y,
+    unsigned int& rng_state
+);
 __device__ cuda_ray get_simple_camera_ray(double u, double v, int image_width, int image_height);
 
 __device__ cuda_ray get_simple_camera_ray(int x, int y, int image_width, int image_height) {
@@ -258,6 +312,22 @@ __device__ cuda_ray get_simple_camera_ray(double u, double v, int image_width, i
         origin - horizontal / 2.0 - vertical / 2.0 - make_vec3(0, 0, focal_length);
 
     return cuda_ray{origin, lower_left_corner + u * horizontal + v * vertical - origin};
+}
+
+__device__ cuda_ray get_camera_ray(
+    const cuda_camera& camera,
+    int x,
+    int y,
+    unsigned int& rng_state
+) {
+    const double offset_x = random_double(rng_state) - 0.5;
+    const double offset_y = random_double(rng_state) - 0.5;
+    const cuda_vec3 pixel_sample =
+        camera.pixel00_loc +
+        (x + offset_x) * camera.pixel_delta_u +
+        (y + offset_y) * camera.pixel_delta_v;
+
+    return cuda_ray{camera.center, pixel_sample - camera.center};
 }
 
 __device__ cuda_vec3 path_traced_color(
@@ -404,6 +474,7 @@ __global__ void path_traced_spheres_kernel(
     rgb* pixels,
     int image_width,
     int image_height,
+    cuda_camera camera,
     const cuda_sphere* spheres,
     int sphere_count,
     int samples_per_pixel,
@@ -424,9 +495,7 @@ __global__ void path_traced_spheres_kernel(
     cuda_vec3 color = make_vec3(0.0, 0.0, 0.0);
 
     for (int sample = 0; sample < samples_per_pixel; sample++) {
-        const double u = (x + random_double(rng_state)) / (image_width - 1);
-        const double v = (image_height - 1 - y + random_double(rng_state)) / (image_height - 1);
-        const cuda_ray ray = get_simple_camera_ray(u, v, image_width, image_height);
+        const cuda_ray ray = get_camera_ray(camera, x, y, rng_state);
         color += path_traced_color(ray, spheres, sphere_count, max_depth, rng_state);
     }
 
@@ -574,7 +643,6 @@ bool render_cuda_multiple_spheres(const char* output_path, int image_width, int 
         cuda_sphere{make_vec3(-1.0, 0, -1.2), 0.45, make_vec3(0.2, 0.35, 0.9), material_metal, 0.15, 1.0},
         cuda_sphere{make_vec3(1.0, 0, -1.2), 0.45, make_vec3(0.9, 0.75, 0.25), material_metal, 0.05, 1.0}
     };
-
     rgb* device_pixels = nullptr;
     cuda_sphere* device_spheres = nullptr;
 
@@ -665,6 +733,15 @@ bool render_cuda_path_traced_spheres(
         cuda_sphere{make_vec3(-1.0, 0, -1.2), 0.45, make_vec3(0.2, 0.35, 0.9), material_metal, 0.15, 1.0},
         cuda_sphere{make_vec3(1.0, 0, -1.2), 0.45, make_vec3(0.9, 0.75, 0.25), material_metal, 0.05, 1.0}
     };
+    const cuda_camera camera = make_camera(
+        image_width,
+        image_height,
+        90.0,
+        make_vec3(0, 0, 0),
+        make_vec3(0, 0, -1),
+        make_vec3(0, 1, 0),
+        1.0
+    );
 
     rgb* device_pixels = nullptr;
     cuda_sphere* device_spheres = nullptr;
@@ -701,6 +778,7 @@ bool render_cuda_path_traced_spheres(
             device_pixels,
             image_width,
             image_height,
+            camera,
             device_spheres,
             static_cast<int>(host_spheres.size()),
             samples_per_pixel,
@@ -740,6 +818,10 @@ bool render_cuda_path_traced_spheres(
         << "  spheres: " << host_spheres.size() << '\n'
         << "  samples_per_pixel: " << samples_per_pixel << '\n'
         << "  max_depth: " << max_depth << '\n'
+        << "  vfov: 90\n"
+        << "  lookfrom: 0 0 0\n"
+        << "  lookat: 0 0 -1\n"
+        << "  focus_dist: 1\n"
         << "  total primary samples: " << total_samples << '\n'
         << "  time: " << elapsed.count() << " seconds\n"
         << "  primary samples/sec: " << (total_samples / elapsed.count()) << '\n';
