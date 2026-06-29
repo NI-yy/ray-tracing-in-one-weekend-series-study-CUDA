@@ -21,7 +21,7 @@ class camera {
 		double defocus_angle = 0; // Variation angle of rays through each pixel
 		double focus_dist = 10; // Distance from camera lookfrom point to plane of perfect focus
 
-		void render(const hittable& world) {
+		void render(const hittable& world, const char* output_path = "image.ppm") {
 			initialize();
 
 			const auto render_start = std::chrono::high_resolution_clock::now();
@@ -36,7 +36,7 @@ class camera {
 				<< "  total primary samples: " << total_samples << "\n\n";
 
 			
-			std::ofstream image_file("image.ppm");
+			std::ofstream image_file(output_path);
 			image_file << "P3\n" << image_width << ' ' << image_height << "\n255\n";
 
 			for (int j = 0; j < image_height; j++) {
@@ -64,7 +64,8 @@ class camera {
 				<< "\nDone.\n"
 				<< "Render time: " << elapsed_seconds << " seconds\n"
 				<< "Pixels/sec: " << (total_pixels / elapsed_seconds) << '\n'
-				<< "Primary samples/sec: " << (total_samples / elapsed_seconds) << '\n';
+				<< "Primary samples/sec: " << (total_samples / elapsed_seconds) << '\n'
+				<< "Output: " << output_path << '\n';
 		}
 
 	private:
