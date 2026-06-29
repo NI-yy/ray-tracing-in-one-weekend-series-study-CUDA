@@ -25,7 +25,7 @@ int main() {
     world.add(make_shared<sphere>(
         point3(0, 0, -1),
         0.5,
-        make_shared<lambertian>(color(0.7, 0.3, 0.3))
+        make_shared<dielectric>(1.5)
     ));
     world.add(make_shared<sphere>(
         point3(-1.0, 0, -1.2),

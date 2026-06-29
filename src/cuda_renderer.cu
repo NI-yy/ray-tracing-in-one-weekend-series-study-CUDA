@@ -32,6 +32,7 @@ struct cuda_sphere {
     cuda_vec3 albedo;
     int material_type;
     double fuzz;
+    double refraction_index;
 };
 
 struct hit_record {
@@ -41,10 +42,13 @@ struct hit_record {
     cuda_vec3 albedo;
     int material_type;
     double fuzz;
+    double refraction_index;
+    bool front_face;
 };
 
 const int material_lambertian = 0;
 const int material_metal = 1;
+const int material_dielectric = 2;
 
 __host__ __device__ cuda_vec3 make_vec3(double x, double y, double z) {
     return cuda_vec3{x, y, z};
@@ -52,6 +56,10 @@ __host__ __device__ cuda_vec3 make_vec3(double x, double y, double z) {
 
 __host__ __device__ cuda_vec3 operator+(const cuda_vec3& a, const cuda_vec3& b) {
     return make_vec3(a.x + b.x, a.y + b.y, a.z + b.z);
+}
+
+__host__ __device__ cuda_vec3 operator-(const cuda_vec3& v) {
+    return make_vec3(-v.x, -v.y, -v.z);
 }
 
 __host__ __device__ cuda_vec3 operator-(const cuda_vec3& a, const cuda_vec3& b) {
@@ -91,6 +99,19 @@ __host__ __device__ cuda_vec3 unit_vector(const cuda_vec3& v) {
 
 __host__ __device__ cuda_vec3 reflect(const cuda_vec3& v, const cuda_vec3& n) {
     return v - 2.0 * dot(v, n) * n;
+}
+
+__host__ __device__ cuda_vec3 refract(const cuda_vec3& uv, const cuda_vec3& n, double etai_over_etat) {
+    const double cos_theta = fmin(dot(-uv, n), 1.0);
+    const cuda_vec3 r_out_perp = etai_over_etat * (uv + cos_theta * n);
+    const cuda_vec3 r_out_parallel = -sqrt(fabs(1.0 - dot(r_out_perp, r_out_perp))) * n;
+    return r_out_perp + r_out_parallel;
+}
+
+__host__ __device__ double reflectance(double cosine, double refraction_index) {
+    double r0 = (1.0 - refraction_index) / (1.0 + refraction_index);
+    r0 = r0 * r0;
+    return r0 + (1.0 - r0) * pow(1.0 - cosine, 5.0);
 }
 
 __host__ __device__ bool near_zero(const cuda_vec3& v) {
@@ -190,10 +211,13 @@ __device__ bool hit_sphere_list(
             closest_so_far = root;
             closest_hit.t = root;
             closest_hit.point = ray_at(ray, root);
-            closest_hit.normal = unit_vector(closest_hit.point - spheres[i].center);
+            const cuda_vec3 outward_normal = unit_vector(closest_hit.point - spheres[i].center);
+            closest_hit.front_face = dot(ray.direction, outward_normal) < 0.0;
+            closest_hit.normal = closest_hit.front_face ? outward_normal : -outward_normal;
             closest_hit.albedo = spheres[i].albedo;
             closest_hit.material_type = spheres[i].material_type;
             closest_hit.fuzz = spheres[i].fuzz;
+            closest_hit.refraction_index = spheres[i].refraction_index;
         }
     }
 
@@ -254,7 +278,21 @@ __device__ cuda_vec3 path_traced_color(
         cuda_ray scattered{};
         bool did_scatter = true;
 
-        if (rec.material_type == material_metal) {
+        if (rec.material_type == material_dielectric) {
+            const cuda_vec3 unit_direction = unit_vector(ray.direction);
+            const double ri = rec.front_face ? (1.0 / rec.refraction_index) : rec.refraction_index;
+            const double cos_theta = fmin(dot(-unit_direction, rec.normal), 1.0);
+            const double sin_theta = sqrt(1.0 - cos_theta * cos_theta);
+            const bool cannot_refract = ri * sin_theta > 1.0;
+
+            cuda_vec3 direction;
+            if (cannot_refract || reflectance(cos_theta, ri) > random_double(rng_state))
+                direction = reflect(unit_direction, rec.normal);
+            else
+                direction = refract(unit_direction, rec.normal, ri);
+
+            scattered = cuda_ray{rec.point, direction};
+        } else if (rec.material_type == material_metal) {
             const cuda_vec3 reflected = reflect(unit_vector(ray.direction), rec.normal);
             const cuda_vec3 scatter_direction = reflected + rec.fuzz * random_unit_vector(rng_state);
             scattered = cuda_ray{rec.point, scatter_direction};
@@ -309,14 +347,25 @@ __global__ void single_sphere_kernel(rgb* pixels, int image_width, int image_hei
         0.5,
         make_vec3(0.7, 0.3, 0.3),
         material_lambertian,
-        0.0
+        0.0,
+        1.0
     };
 
     double t = 0.0;
     cuda_vec3 color;
     if (hit_sphere(sphere, ray, 0.001, 1.0e30, t)) {
         const cuda_vec3 normal = unit_vector(ray_at(ray, t) - sphere.center);
-        const hit_record rec{t, ray_at(ray, t), normal, sphere.albedo, sphere.material_type, sphere.fuzz};
+        const bool front_face = dot(ray.direction, normal) < 0.0;
+        const hit_record rec{
+            t,
+            ray_at(ray, t),
+            front_face ? normal : -normal,
+            sphere.albedo,
+            sphere.material_type,
+            sphere.fuzz,
+            sphere.refraction_index,
+            front_face
+        };
         color = shade_with_simple_light(rec);
     } else {
         color = background_color(ray);
@@ -520,10 +569,10 @@ bool render_cuda_multiple_spheres(const char* output_path, int image_width, int 
     const size_t pixel_bytes = pixel_count * sizeof(rgb);
 
     const std::vector<cuda_sphere> host_spheres{
-        cuda_sphere{make_vec3(0, -100.5, -1), 100.0, make_vec3(0.55, 0.85, 0.35), material_lambertian, 0.0},
-        cuda_sphere{make_vec3(0, 0, -1), 0.5, make_vec3(0.7, 0.3, 0.3), material_lambertian, 0.0},
-        cuda_sphere{make_vec3(-1.0, 0, -1.2), 0.45, make_vec3(0.2, 0.35, 0.9), material_metal, 0.15},
-        cuda_sphere{make_vec3(1.0, 0, -1.2), 0.45, make_vec3(0.9, 0.75, 0.25), material_metal, 0.05}
+        cuda_sphere{make_vec3(0, -100.5, -1), 100.0, make_vec3(0.55, 0.85, 0.35), material_lambertian, 0.0, 1.0},
+        cuda_sphere{make_vec3(0, 0, -1), 0.5, make_vec3(1.0, 1.0, 1.0), material_dielectric, 0.0, 1.5},
+        cuda_sphere{make_vec3(-1.0, 0, -1.2), 0.45, make_vec3(0.2, 0.35, 0.9), material_metal, 0.15, 1.0},
+        cuda_sphere{make_vec3(1.0, 0, -1.2), 0.45, make_vec3(0.9, 0.75, 0.25), material_metal, 0.05, 1.0}
     };
 
     rgb* device_pixels = nullptr;
@@ -611,10 +660,10 @@ bool render_cuda_path_traced_spheres(
     const size_t pixel_bytes = pixel_count * sizeof(rgb);
 
     const std::vector<cuda_sphere> host_spheres{
-        cuda_sphere{make_vec3(0, -100.5, -1), 100.0, make_vec3(0.55, 0.85, 0.35), material_lambertian, 0.0},
-        cuda_sphere{make_vec3(0, 0, -1), 0.5, make_vec3(0.7, 0.3, 0.3), material_lambertian, 0.0},
-        cuda_sphere{make_vec3(-1.0, 0, -1.2), 0.45, make_vec3(0.2, 0.35, 0.9), material_metal, 0.15},
-        cuda_sphere{make_vec3(1.0, 0, -1.2), 0.45, make_vec3(0.9, 0.75, 0.25), material_metal, 0.05}
+        cuda_sphere{make_vec3(0, -100.5, -1), 100.0, make_vec3(0.55, 0.85, 0.35), material_lambertian, 0.0, 1.0},
+        cuda_sphere{make_vec3(0, 0, -1), 0.5, make_vec3(1.0, 1.0, 1.0), material_dielectric, 0.0, 1.5},
+        cuda_sphere{make_vec3(-1.0, 0, -1.2), 0.45, make_vec3(0.2, 0.35, 0.9), material_metal, 0.15, 1.0},
+        cuda_sphere{make_vec3(1.0, 0, -1.2), 0.45, make_vec3(0.9, 0.75, 0.25), material_metal, 0.05, 1.0}
     };
 
     rgb* device_pixels = nullptr;
