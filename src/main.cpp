@@ -12,7 +12,7 @@
 
 int main() {
 #ifdef RTWEEKEND_CUDA_ENABLED
-    render_cuda_multiple_spheres("image_cuda_spheres.ppm", 200, 112);
+    render_cuda_path_traced_spheres("image_cuda_path_traced.ppm", 200, 112, 20, 10);
 #endif
 
     hittable_list world;

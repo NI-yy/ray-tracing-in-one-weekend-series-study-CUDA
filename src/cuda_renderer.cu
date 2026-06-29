@@ -55,6 +55,17 @@ __host__ __device__ cuda_vec3 operator*(double t, const cuda_vec3& v) {
     return make_vec3(t * v.x, t * v.y, t * v.z);
 }
 
+__host__ __device__ cuda_vec3 operator*(const cuda_vec3& a, const cuda_vec3& b) {
+    return make_vec3(a.x * b.x, a.y * b.y, a.z * b.z);
+}
+
+__host__ __device__ cuda_vec3& operator+=(cuda_vec3& a, const cuda_vec3& b) {
+    a.x += b.x;
+    a.y += b.y;
+    a.z += b.z;
+    return a;
+}
+
 __host__ __device__ cuda_vec3 operator/(const cuda_vec3& v, double t) {
     return (1.0 / t) * v;
 }
@@ -71,16 +82,61 @@ __host__ __device__ cuda_vec3 unit_vector(const cuda_vec3& v) {
     return v / length(v);
 }
 
+__host__ __device__ bool near_zero(const cuda_vec3& v) {
+    const double epsilon = 1.0e-8;
+    return fabs(v.x) < epsilon && fabs(v.y) < epsilon && fabs(v.z) < epsilon;
+}
+
+__host__ __device__ double clamp(double x, double min_value, double max_value) {
+    if (x < min_value)
+        return min_value;
+    if (x > max_value)
+        return max_value;
+    return x;
+}
+
 __host__ __device__ cuda_vec3 ray_at(const cuda_ray& ray, double t) {
     return ray.origin + t * ray.direction;
 }
 
-__host__ __device__ rgb to_rgb(const cuda_vec3& color) {
+__host__ __device__ rgb to_rgb(const cuda_vec3& color, double scale = 1.0) {
+    const double r = sqrt(scale * color.x);
+    const double g = sqrt(scale * color.y);
+    const double b = sqrt(scale * color.z);
+
     return rgb{
-        static_cast<unsigned char>(255.999 * color.x),
-        static_cast<unsigned char>(255.999 * color.y),
-        static_cast<unsigned char>(255.999 * color.z)
+        static_cast<unsigned char>(256 * clamp(r, 0.0, 0.999)),
+        static_cast<unsigned char>(256 * clamp(g, 0.0, 0.999)),
+        static_cast<unsigned char>(256 * clamp(b, 0.0, 0.999))
     };
+}
+
+__device__ unsigned int xorshift32(unsigned int& state) {
+    state ^= state << 13;
+    state ^= state >> 17;
+    state ^= state << 5;
+    return state;
+}
+
+__device__ double random_double(unsigned int& state) {
+    return (xorshift32(state) + 0.5) / 4294967296.0;
+}
+
+__device__ cuda_vec3 random_in_unit_sphere(unsigned int& state) {
+    while (true) {
+        const cuda_vec3 p = make_vec3(
+            2.0 * random_double(state) - 1.0,
+            2.0 * random_double(state) - 1.0,
+            2.0 * random_double(state) - 1.0
+        );
+
+        if (dot(p, p) < 1.0)
+            return p;
+    }
+}
+
+__device__ cuda_vec3 random_unit_vector(unsigned int& state) {
+    return unit_vector(random_in_unit_sphere(state));
 }
 
 __device__ bool hit_sphere(const cuda_sphere& sphere, const cuda_ray& ray, double t_min, double t_max, double& root) {
@@ -144,7 +200,15 @@ __device__ cuda_vec3 shade_with_simple_light(const hit_record& rec) {
     return (ambient + 0.75 * diffuse) * rec.albedo;
 }
 
+__device__ cuda_ray get_simple_camera_ray(double u, double v, int image_width, int image_height);
+
 __device__ cuda_ray get_simple_camera_ray(int x, int y, int image_width, int image_height) {
+    const double u = static_cast<double>(x) / (image_width - 1);
+    const double v = static_cast<double>(image_height - 1 - y) / (image_height - 1);
+    return get_simple_camera_ray(u, v, image_width, image_height);
+}
+
+__device__ cuda_ray get_simple_camera_ray(double u, double v, int image_width, int image_height) {
     const double aspect_ratio = static_cast<double>(image_width) / image_height;
     const double viewport_height = 2.0;
     const double viewport_width = aspect_ratio * viewport_height;
@@ -156,9 +220,33 @@ __device__ cuda_ray get_simple_camera_ray(int x, int y, int image_width, int ima
     const cuda_vec3 lower_left_corner =
         origin - horizontal / 2.0 - vertical / 2.0 - make_vec3(0, 0, focal_length);
 
-    const double u = static_cast<double>(x) / (image_width - 1);
-    const double v = static_cast<double>(image_height - 1 - y) / (image_height - 1);
     return cuda_ray{origin, lower_left_corner + u * horizontal + v * vertical - origin};
+}
+
+__device__ cuda_vec3 path_traced_color(
+    cuda_ray ray,
+    const cuda_sphere* spheres,
+    int sphere_count,
+    int max_depth,
+    unsigned int& rng_state
+) {
+    cuda_vec3 attenuation = make_vec3(1.0, 1.0, 1.0);
+
+    for (int depth = 0; depth < max_depth; depth++) {
+        hit_record rec{};
+
+        if (!hit_sphere_list(spheres, sphere_count, ray, 0.001, 1.0e30, rec))
+            return attenuation * background_color(ray);
+
+        cuda_vec3 scatter_direction = rec.normal + random_unit_vector(rng_state);
+        if (near_zero(scatter_direction))
+            scatter_direction = rec.normal;
+
+        attenuation = attenuation * rec.albedo;
+        ray = cuda_ray{rec.point, scatter_direction};
+    }
+
+    return make_vec3(0.0, 0.0, 0.0);
 }
 
 __global__ void background_gradient_kernel(rgb* pixels, int image_width, int image_height) {
@@ -228,6 +316,39 @@ __global__ void multiple_spheres_kernel(
     }
 
     pixels[y * image_width + x] = to_rgb(color);
+}
+
+__global__ void path_traced_spheres_kernel(
+    rgb* pixels,
+    int image_width,
+    int image_height,
+    const cuda_sphere* spheres,
+    int sphere_count,
+    int samples_per_pixel,
+    int max_depth
+) {
+    const int x = blockIdx.x * blockDim.x + threadIdx.x;
+    const int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (x >= image_width || y >= image_height)
+        return;
+
+    unsigned int rng_state =
+        2166136261u ^
+        static_cast<unsigned int>(x + 1) * 16777619u ^
+        static_cast<unsigned int>(y + 1) * 374761393u ^
+        static_cast<unsigned int>(samples_per_pixel) * 668265263u;
+
+    cuda_vec3 color = make_vec3(0.0, 0.0, 0.0);
+
+    for (int sample = 0; sample < samples_per_pixel; sample++) {
+        const double u = (x + random_double(rng_state)) / (image_width - 1);
+        const double v = (image_height - 1 - y + random_double(rng_state)) / (image_height - 1);
+        const cuda_ray ray = get_simple_camera_ray(u, v, image_width, image_height);
+        color += path_traced_color(ray, spheres, sphere_count, max_depth, rng_state);
+    }
+
+    pixels[y * image_width + x] = to_rgb(color, 1.0 / samples_per_pixel);
 }
 
 bool check_cuda(cudaError_t result, const char* operation) {
@@ -441,6 +562,105 @@ bool render_cuda_multiple_spheres(const char* output_path, int image_width, int 
         << "  image: " << image_width << "x" << image_height << '\n'
         << "  spheres: " << host_spheres.size() << '\n'
         << "  time: " << elapsed.count() << " seconds\n";
+
+    return true;
+}
+
+bool render_cuda_path_traced_spheres(
+    const char* output_path,
+    int image_width,
+    int image_height,
+    int samples_per_pixel,
+    int max_depth
+) {
+    const auto start = std::chrono::high_resolution_clock::now();
+    const int pixel_count = image_width * image_height;
+    const size_t pixel_bytes = pixel_count * sizeof(rgb);
+
+    const std::vector<cuda_sphere> host_spheres{
+        cuda_sphere{make_vec3(0, -100.5, -1), 100.0, make_vec3(0.55, 0.85, 0.35)},
+        cuda_sphere{make_vec3(0, 0, -1), 0.5, make_vec3(0.7, 0.3, 0.3)},
+        cuda_sphere{make_vec3(-1.0, 0, -1.2), 0.45, make_vec3(0.2, 0.35, 0.9)},
+        cuda_sphere{make_vec3(1.0, 0, -1.2), 0.45, make_vec3(0.9, 0.75, 0.25)}
+    };
+
+    rgb* device_pixels = nullptr;
+    cuda_sphere* device_spheres = nullptr;
+
+    if (!check_cuda(cudaMalloc(&device_pixels, pixel_bytes), "cudaMalloc pixels"))
+        return false;
+
+    bool ok = true;
+    ok = ok && check_cuda(
+        cudaMalloc(&device_spheres, host_spheres.size() * sizeof(cuda_sphere)),
+        "cudaMalloc spheres"
+    );
+
+    if (ok) {
+        ok = check_cuda(
+            cudaMemcpy(
+                device_spheres,
+                host_spheres.data(),
+                host_spheres.size() * sizeof(cuda_sphere),
+                cudaMemcpyHostToDevice
+            ),
+            "cudaMemcpy spheres host to device"
+        );
+    }
+
+    const dim3 block_size(16, 16);
+    const dim3 block_count(
+        (image_width + block_size.x - 1) / block_size.x,
+        (image_height + block_size.y - 1) / block_size.y
+    );
+
+    if (ok) {
+        path_traced_spheres_kernel<<<block_count, block_size>>>(
+            device_pixels,
+            image_width,
+            image_height,
+            device_spheres,
+            static_cast<int>(host_spheres.size()),
+            samples_per_pixel,
+            max_depth
+        );
+
+        ok = ok && check_cuda(cudaGetLastError(), "path_traced_spheres_kernel launch");
+        ok = ok && check_cuda(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
+    }
+
+    std::vector<rgb> host_pixels(pixel_count);
+    if (ok) {
+        ok = check_cuda(
+            cudaMemcpy(host_pixels.data(), device_pixels, pixel_bytes, cudaMemcpyDeviceToHost),
+            "cudaMemcpy pixels device to host"
+        );
+    }
+
+    check_cuda(cudaFree(device_spheres), "cudaFree spheres");
+    check_cuda(cudaFree(device_pixels), "cudaFree pixels");
+
+    if (!ok)
+        return false;
+
+    if (!write_ppm(output_path, host_pixels, image_width, image_height))
+        return false;
+
+    const auto end = std::chrono::high_resolution_clock::now();
+    const std::chrono::duration<double> elapsed = end - start;
+    const auto total_samples =
+        static_cast<long long>(image_width) * image_height * samples_per_pixel;
+
+    std::clog
+        << "CUDA path traced spheres render:\n"
+        << "  output: " << output_path << '\n'
+        << "  image: " << image_width << "x" << image_height << '\n'
+        << "  spheres: " << host_spheres.size() << '\n'
+        << "  samples_per_pixel: " << samples_per_pixel << '\n'
+        << "  max_depth: " << max_depth << '\n'
+        << "  total primary samples: " << total_samples << '\n'
+        << "  time: " << elapsed.count() << " seconds\n"
+        << "  primary samples/sec: " << (total_samples / elapsed.count()) << '\n';
 
     return true;
 }
