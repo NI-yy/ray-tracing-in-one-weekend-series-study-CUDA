@@ -441,6 +441,13 @@ CUDA error during gradient_kernel launch: the provided PTX was compiled with an 
 
 ## 次にやること
 
-次は、CUDA 側に metal / dielectric などのマテリアル種別を追加する。
+コピー元の最終コミットに近づけるため、次はマテリアル、カメラ、シーン生成を順番に CUDA 側へ移していく。
 
-今の CUDA 版は Lambertian 風の diffuse bounce までなので、コピー元の最終コミットに近づけるには、反射・屈折・カメラ設定・ランダムシーン生成を順番に移していく必要がある。
+今の CUDA 版は Lambertian 風の diffuse bounce までなので、次のマイルストーンは以下の通り。
+
+- [ ] CUDA 側に metal マテリアルを追加する。
+- [ ] CUDA 側に dielectric マテリアルを追加する。
+- [ ] CUDA 側のカメラ設定を CPU 版に近づける。
+- [ ] defocus blur を CUDA 側で扱う。
+- [ ] ランダムな多数の球を CUDA 側で扱えるようにする。
+- [ ] コピー元の最終シーンに近い構成で CPU 版と CUDA 版を比較する。
