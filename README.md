@@ -13,7 +13,7 @@ Ray Tracing in One Weekend 系列を読みながら実装した CPU 版レイト
 - GPU 側でランダムサンプリングと複数 bounce を処理
 - CPU 版と CUDA 版を同じ条件にして速度比較
 
-現在の CUDA 実装では、複数の球に対して Lambertian 風のランダム散乱を行い、複数サンプル・複数 bounce の簡易パストレーシングを GPU 側で実行しています。
+現在の CUDA 実装では、複数の球に対して Lambertian と Metal の簡易マテリアルを扱い、複数サンプル・複数 bounce の簡易パストレーシングを GPU 側で実行しています。
 
 ## 現在の確認結果
 
@@ -24,13 +24,13 @@ CPU 版と CUDA 版を、次の条件にそろえて比較しました。
 - Max depth: 10
 - Total primary samples: 448,000
 - シーン: 地面 + 3 個の球
-- マテリアル: Lambertian 風の diffuse bounce
+- マテリアル: Lambertian + Metal
 
 計測結果:
 
-- CUDA render time: 約 0.25 秒
-- CUDA primary samples/sec: 約 1,793,000
-- CPU render time: 約 1.09 秒
-- CPU primary samples/sec: 約 410,835
+- CUDA render time: 約 0.28 秒
+- CUDA primary samples/sec: 約 1,582,000
+- CPU render time: 約 1.11 秒
+- CPU primary samples/sec: 約 403,720
 
 詳細な作業ログは `CUDA_SETUP_NOTES.md` にまとめています。

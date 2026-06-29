@@ -30,6 +30,8 @@ struct cuda_sphere {
     cuda_vec3 center;
     double radius;
     cuda_vec3 albedo;
+    int material_type;
+    double fuzz;
 };
 
 struct hit_record {
@@ -37,7 +39,12 @@ struct hit_record {
     cuda_vec3 point;
     cuda_vec3 normal;
     cuda_vec3 albedo;
+    int material_type;
+    double fuzz;
 };
+
+const int material_lambertian = 0;
+const int material_metal = 1;
 
 __host__ __device__ cuda_vec3 make_vec3(double x, double y, double z) {
     return cuda_vec3{x, y, z};
@@ -80,6 +87,10 @@ __host__ __device__ double length(const cuda_vec3& v) {
 
 __host__ __device__ cuda_vec3 unit_vector(const cuda_vec3& v) {
     return v / length(v);
+}
+
+__host__ __device__ cuda_vec3 reflect(const cuda_vec3& v, const cuda_vec3& n) {
+    return v - 2.0 * dot(v, n) * n;
 }
 
 __host__ __device__ bool near_zero(const cuda_vec3& v) {
@@ -181,6 +192,8 @@ __device__ bool hit_sphere_list(
             closest_hit.point = ray_at(ray, root);
             closest_hit.normal = unit_vector(closest_hit.point - spheres[i].center);
             closest_hit.albedo = spheres[i].albedo;
+            closest_hit.material_type = spheres[i].material_type;
+            closest_hit.fuzz = spheres[i].fuzz;
         }
     }
 
@@ -238,12 +251,26 @@ __device__ cuda_vec3 path_traced_color(
         if (!hit_sphere_list(spheres, sphere_count, ray, 0.001, 1.0e30, rec))
             return attenuation * background_color(ray);
 
-        cuda_vec3 scatter_direction = rec.normal + random_unit_vector(rng_state);
-        if (near_zero(scatter_direction))
-            scatter_direction = rec.normal;
+        cuda_ray scattered{};
+        bool did_scatter = true;
+
+        if (rec.material_type == material_metal) {
+            const cuda_vec3 reflected = reflect(unit_vector(ray.direction), rec.normal);
+            const cuda_vec3 scatter_direction = reflected + rec.fuzz * random_unit_vector(rng_state);
+            scattered = cuda_ray{rec.point, scatter_direction};
+            did_scatter = dot(scattered.direction, rec.normal) > 0.0;
+        } else {
+            cuda_vec3 scatter_direction = rec.normal + random_unit_vector(rng_state);
+            if (near_zero(scatter_direction))
+                scatter_direction = rec.normal;
+            scattered = cuda_ray{rec.point, scatter_direction};
+        }
+
+        if (!did_scatter)
+            return make_vec3(0.0, 0.0, 0.0);
 
         attenuation = attenuation * rec.albedo;
-        ray = cuda_ray{rec.point, scatter_direction};
+        ray = scattered;
     }
 
     return make_vec3(0.0, 0.0, 0.0);
@@ -277,13 +304,19 @@ __global__ void single_sphere_kernel(rgb* pixels, int image_width, int image_hei
         return;
 
     const cuda_ray ray = get_simple_camera_ray(x, y, image_width, image_height);
-    const cuda_sphere sphere{make_vec3(0, 0, -1), 0.5, make_vec3(0.7, 0.3, 0.3)};
+    const cuda_sphere sphere{
+        make_vec3(0, 0, -1),
+        0.5,
+        make_vec3(0.7, 0.3, 0.3),
+        material_lambertian,
+        0.0
+    };
 
     double t = 0.0;
     cuda_vec3 color;
     if (hit_sphere(sphere, ray, 0.001, 1.0e30, t)) {
         const cuda_vec3 normal = unit_vector(ray_at(ray, t) - sphere.center);
-        const hit_record rec{t, ray_at(ray, t), normal, sphere.albedo};
+        const hit_record rec{t, ray_at(ray, t), normal, sphere.albedo, sphere.material_type, sphere.fuzz};
         color = shade_with_simple_light(rec);
     } else {
         color = background_color(ray);
@@ -487,10 +520,10 @@ bool render_cuda_multiple_spheres(const char* output_path, int image_width, int 
     const size_t pixel_bytes = pixel_count * sizeof(rgb);
 
     const std::vector<cuda_sphere> host_spheres{
-        cuda_sphere{make_vec3(0, -100.5, -1), 100.0, make_vec3(0.55, 0.85, 0.35)},
-        cuda_sphere{make_vec3(0, 0, -1), 0.5, make_vec3(0.7, 0.3, 0.3)},
-        cuda_sphere{make_vec3(-1.0, 0, -1.2), 0.45, make_vec3(0.2, 0.35, 0.9)},
-        cuda_sphere{make_vec3(1.0, 0, -1.2), 0.45, make_vec3(0.9, 0.75, 0.25)}
+        cuda_sphere{make_vec3(0, -100.5, -1), 100.0, make_vec3(0.55, 0.85, 0.35), material_lambertian, 0.0},
+        cuda_sphere{make_vec3(0, 0, -1), 0.5, make_vec3(0.7, 0.3, 0.3), material_lambertian, 0.0},
+        cuda_sphere{make_vec3(-1.0, 0, -1.2), 0.45, make_vec3(0.2, 0.35, 0.9), material_metal, 0.15},
+        cuda_sphere{make_vec3(1.0, 0, -1.2), 0.45, make_vec3(0.9, 0.75, 0.25), material_metal, 0.05}
     };
 
     rgb* device_pixels = nullptr;
@@ -578,10 +611,10 @@ bool render_cuda_path_traced_spheres(
     const size_t pixel_bytes = pixel_count * sizeof(rgb);
 
     const std::vector<cuda_sphere> host_spheres{
-        cuda_sphere{make_vec3(0, -100.5, -1), 100.0, make_vec3(0.55, 0.85, 0.35)},
-        cuda_sphere{make_vec3(0, 0, -1), 0.5, make_vec3(0.7, 0.3, 0.3)},
-        cuda_sphere{make_vec3(-1.0, 0, -1.2), 0.45, make_vec3(0.2, 0.35, 0.9)},
-        cuda_sphere{make_vec3(1.0, 0, -1.2), 0.45, make_vec3(0.9, 0.75, 0.25)}
+        cuda_sphere{make_vec3(0, -100.5, -1), 100.0, make_vec3(0.55, 0.85, 0.35), material_lambertian, 0.0},
+        cuda_sphere{make_vec3(0, 0, -1), 0.5, make_vec3(0.7, 0.3, 0.3), material_lambertian, 0.0},
+        cuda_sphere{make_vec3(-1.0, 0, -1.2), 0.45, make_vec3(0.2, 0.35, 0.9), material_metal, 0.15},
+        cuda_sphere{make_vec3(1.0, 0, -1.2), 0.45, make_vec3(0.9, 0.75, 0.25), material_metal, 0.05}
     };
 
     rgb* device_pixels = nullptr;

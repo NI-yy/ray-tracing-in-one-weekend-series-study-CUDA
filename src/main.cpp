@@ -30,12 +30,12 @@ int main() {
     world.add(make_shared<sphere>(
         point3(-1.0, 0, -1.2),
         0.45,
-        make_shared<lambertian>(color(0.2, 0.35, 0.9))
+        make_shared<metal>(color(0.2, 0.35, 0.9), 0.15)
     ));
     world.add(make_shared<sphere>(
         point3(1.0, 0, -1.2),
         0.45,
-        make_shared<lambertian>(color(0.9, 0.75, 0.25))
+        make_shared<metal>(color(0.9, 0.75, 0.25), 0.05)
     ));
 
     camera cam;
