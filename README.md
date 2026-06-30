@@ -1,39 +1,58 @@
 # ray-tracing-in-one-weekend-study-CUDA
 
-Ray Tracing in One Weekend 系列を読みながら実装した CPU 版レイトレーサを、CUDA で少しずつ GPU 化していくための学習用リポジトリです。
+`Ray Tracing in One Weekend` シリーズを読みながら実装した CPU 版レイトレーサーを、学習目的で少しずつ CUDA 化しているリポジトリです。
 
-コピー元の完成形を一気に CUDA 化するのではなく、次のように小さい処理から順番に GPU 側へ移しています。
+元の CPU 実装を一気に置き換えるのではなく、次のように段階的に GPU 側へ処理を移しています。
 
 - CUDA Toolkit / `nvcc` を使ったビルド環境の準備
 - C++ の `main.cpp` から CUDA 側の関数を呼び出す構成
 - GPU で背景グラデーションを生成
 - GPU で球 1 個との交差判定
 - GPU で複数の球との交差判定
-- GPU 側で簡単なマテリアル色を扱う
-- GPU 側でランダムサンプリングと複数 bounce を処理
-- CPU 版と CUDA 版を同じ条件にして速度比較
+- GPU 側で Lambertian / Metal / Dielectric の簡易マテリアル処理
+- GPU 側でランダムサンプリングと複数 bounce のパストレーシング
+- GPU 側でカメラ設定、defocus blur、ランダムな多数の球を処理
+- コピー元の最終シーンに近い構成で CPU 版と CUDA 版を比較
 
-現在の CUDA 実装では、複数の球に対して Lambertian / Metal / Dielectric の簡易マテリアルを扱い、複数サンプル・複数 bounce の簡易パストレーシングを GPU 側で実行しています。
+詳細な作業メモは `CUDA_SETUP_NOTES.md` にまとめています。
 
-## 現在の確認結果
+## 最終レンダリング結果
 
-CPU 版と CUDA 版を、次の条件にそろえて比較しました。
+CUDA 版で、コピー元の最終シーンに近い構成を元のサンプル数相当でレンダリングしました。
 
-- 画像サイズ: 200 x 112
-- Samples per pixel: 5
-- Max depth: 10
-- Total primary samples: 112,000
-- シーン: コピー元の最終シーンに近い構成
-- 球数: 485
-- マテリアル: Lambertian + Metal + Dielectric
-- Camera: `lookfrom = (13, 2, 3)`, `vfov = 20`
-- Defocus angle: 0.6
+![CUDA path traced final result](image_cuda_path_traced_full.png)
+
+## 計測結果
+
+今回の CUDA 版フルレンダリング条件:
+
+- 画像サイズ: `1200 x 675`
+- Samples per pixel: `500`
+- Max depth: `50`
+- 球の数: `485`
+- Total primary samples: `405,000,000`
+- Camera: `lookfrom = (13, 2, 3)`, `lookat = (0, 0, 0)`, `vfov = 20`
+- Defocus angle: `0.6`
 
 計測結果:
 
-- CUDA render time: 約 0.30 秒
-- CUDA primary samples/sec: 約 379,252
-- CPU render time: 約 13.71 秒
-- CPU primary samples/sec: 約 8,170
+- CUDA render time: `72.5343` 秒
+- CUDA primary samples/sec: 約 `5.58M`
 
-詳細な作業ログは `CUDA_SETUP_NOTES.md` にまとめています。
+手元メモの CPU 版実行時間は `11時間42分` だったため、単純比較では約 `580倍` 高速でした。
+
+## ビルドと実行
+
+この環境では Visual Studio 2026 Community と CUDA Toolkit 13.3 を使い、`NMake Makefiles` でビルドしています。
+
+```powershell
+cmd /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 && cmake -S . -B build_nmake_cuda -G "NMake Makefiles"'
+```
+
+```powershell
+cmd /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 && cmake --build build_nmake_cuda'
+```
+
+```powershell
+cmd /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 && build_nmake_cuda\inOneWeekend.exe'
+```
