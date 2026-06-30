@@ -153,6 +153,22 @@ __host__ __device__ double degrees_to_radians(double degrees) {
     return degrees * 3.1415926535897932385 / 180.0;
 }
 
+double host_random_double(unsigned int& state) {
+    state ^= state << 13;
+    state ^= state >> 17;
+    state ^= state << 5;
+    return (state + 0.5) / 4294967296.0;
+}
+
+double host_random_double(unsigned int& state, double min_value, double max_value) {
+    return min_value + (max_value - min_value) * host_random_double(state);
+}
+
+double distance_squared(const cuda_vec3& a, const cuda_vec3& b) {
+    const cuda_vec3 d = a - b;
+    return dot(d, d);
+}
+
 __host__ cuda_camera make_camera(
     int image_width,
     int image_height,
@@ -192,6 +208,54 @@ __host__ cuda_camera make_camera(
         defocus_disk_v,
         defocus_angle
     };
+}
+
+std::vector<cuda_sphere> make_demo_spheres() {
+    std::vector<cuda_sphere> spheres{
+        cuda_sphere{make_vec3(0, -100.5, -1), 100.0, make_vec3(0.55, 0.85, 0.35), material_lambertian, 0.0, 1.0},
+        cuda_sphere{make_vec3(0, 0, -1), 0.5, make_vec3(1.0, 1.0, 1.0), material_dielectric, 0.0, 1.5},
+        cuda_sphere{make_vec3(-1.0, 0, -1.2), 0.45, make_vec3(0.2, 0.35, 0.9), material_metal, 0.15, 1.0},
+        cuda_sphere{make_vec3(1.0, 0, -1.2), 0.45, make_vec3(0.9, 0.75, 0.25), material_metal, 0.05, 1.0}
+    };
+
+    unsigned int rng_state = 0x12345678u;
+    for (int row = 0; row < 6; row++) {
+        for (int column = 0; column < 10; column++) {
+            const double radius = host_random_double(rng_state, 0.07, 0.13);
+            const cuda_vec3 center = make_vec3(
+                -1.8 + column * 0.4 + host_random_double(rng_state, -0.08, 0.08),
+                -0.5 + radius,
+                -0.65 - row * 0.32 + host_random_double(rng_state, -0.08, 0.08)
+            );
+
+            if (distance_squared(center, make_vec3(0, 0, -1)) < 0.55 ||
+                distance_squared(center, make_vec3(-1.0, 0, -1.2)) < 0.42 ||
+                distance_squared(center, make_vec3(1.0, 0, -1.2)) < 0.42)
+                continue;
+
+            const double choose_material = host_random_double(rng_state);
+            if (choose_material < 0.65) {
+                const cuda_vec3 albedo = make_vec3(
+                    host_random_double(rng_state, 0.15, 0.95) * host_random_double(rng_state, 0.15, 0.95),
+                    host_random_double(rng_state, 0.15, 0.95) * host_random_double(rng_state, 0.15, 0.95),
+                    host_random_double(rng_state, 0.15, 0.95) * host_random_double(rng_state, 0.15, 0.95)
+                );
+                spheres.push_back(cuda_sphere{center, radius, albedo, material_lambertian, 0.0, 1.0});
+            } else if (choose_material < 0.9) {
+                const cuda_vec3 albedo = make_vec3(
+                    host_random_double(rng_state, 0.5, 1.0),
+                    host_random_double(rng_state, 0.5, 1.0),
+                    host_random_double(rng_state, 0.5, 1.0)
+                );
+                const double fuzz = host_random_double(rng_state, 0.0, 0.35);
+                spheres.push_back(cuda_sphere{center, radius, albedo, material_metal, fuzz, 1.0});
+            } else {
+                spheres.push_back(cuda_sphere{center, radius, make_vec3(1.0, 1.0, 1.0), material_dielectric, 0.0, 1.5});
+            }
+        }
+    }
+
+    return spheres;
 }
 
 __host__ __device__ rgb to_rgb(const cuda_vec3& color, double scale = 1.0) {
@@ -671,12 +735,7 @@ bool render_cuda_multiple_spheres(const char* output_path, int image_width, int 
     const int pixel_count = image_width * image_height;
     const size_t pixel_bytes = pixel_count * sizeof(rgb);
 
-    const std::vector<cuda_sphere> host_spheres{
-        cuda_sphere{make_vec3(0, -100.5, -1), 100.0, make_vec3(0.55, 0.85, 0.35), material_lambertian, 0.0, 1.0},
-        cuda_sphere{make_vec3(0, 0, -1), 0.5, make_vec3(1.0, 1.0, 1.0), material_dielectric, 0.0, 1.5},
-        cuda_sphere{make_vec3(-1.0, 0, -1.2), 0.45, make_vec3(0.2, 0.35, 0.9), material_metal, 0.15, 1.0},
-        cuda_sphere{make_vec3(1.0, 0, -1.2), 0.45, make_vec3(0.9, 0.75, 0.25), material_metal, 0.05, 1.0}
-    };
+    const std::vector<cuda_sphere> host_spheres = make_demo_spheres();
     rgb* device_pixels = nullptr;
     cuda_sphere* device_spheres = nullptr;
 
@@ -761,12 +820,7 @@ bool render_cuda_path_traced_spheres(
     const int pixel_count = image_width * image_height;
     const size_t pixel_bytes = pixel_count * sizeof(rgb);
 
-    const std::vector<cuda_sphere> host_spheres{
-        cuda_sphere{make_vec3(0, -100.5, -1), 100.0, make_vec3(0.55, 0.85, 0.35), material_lambertian, 0.0, 1.0},
-        cuda_sphere{make_vec3(0, 0, -1), 0.5, make_vec3(1.0, 1.0, 1.0), material_dielectric, 0.0, 1.5},
-        cuda_sphere{make_vec3(-1.0, 0, -1.2), 0.45, make_vec3(0.2, 0.35, 0.9), material_metal, 0.15, 1.0},
-        cuda_sphere{make_vec3(1.0, 0, -1.2), 0.45, make_vec3(0.9, 0.75, 0.25), material_metal, 0.05, 1.0}
-    };
+    const std::vector<cuda_sphere> host_spheres = make_demo_spheres();
     const cuda_camera camera = make_camera(
         image_width,
         image_height,
