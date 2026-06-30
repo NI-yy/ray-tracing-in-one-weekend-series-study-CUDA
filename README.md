@@ -25,12 +25,13 @@ CPU 版と CUDA 版を、次の条件にそろえて比較しました。
 - Total primary samples: 448,000
 - シーン: 地面 + 3 個の球
 - マテリアル: Lambertian + Metal + Dielectric
+- Defocus angle: 2.0
 
 計測結果:
 
-- CUDA render time: 約 0.28 秒
-- CUDA primary samples/sec: 約 1,579,000
-- CPU render time: 約 1.12 秒
-- CPU primary samples/sec: 約 399,276
+- CUDA render time: 約 0.27 秒
+- CUDA primary samples/sec: 約 1,670,000
+- CPU render time: 約 1.41 秒
+- CPU primary samples/sec: 約 316,616
 
 詳細な作業ログは `CUDA_SETUP_NOTES.md` にまとめています。

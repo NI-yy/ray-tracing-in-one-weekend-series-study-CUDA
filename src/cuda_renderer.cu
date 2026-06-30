@@ -31,6 +31,9 @@ struct cuda_camera {
     cuda_vec3 pixel00_loc;
     cuda_vec3 pixel_delta_u;
     cuda_vec3 pixel_delta_v;
+    cuda_vec3 defocus_disk_u;
+    cuda_vec3 defocus_disk_v;
+    double defocus_angle;
 };
 
 struct cuda_sphere {
@@ -157,7 +160,8 @@ __host__ cuda_camera make_camera(
     const cuda_vec3& lookfrom,
     const cuda_vec3& lookat,
     const cuda_vec3& vup,
-    double focus_dist
+    double focus_dist,
+    double defocus_angle
 ) {
     const double theta = degrees_to_radians(vfov);
     const double h = tan(theta / 2.0);
@@ -175,8 +179,19 @@ __host__ cuda_camera make_camera(
     const cuda_vec3 viewport_upper_left =
         lookfrom - focus_dist * w - viewport_u / 2.0 - viewport_v / 2.0;
     const cuda_vec3 pixel00_loc = viewport_upper_left + 0.5 * (pixel_delta_u + pixel_delta_v);
+    const double defocus_radius = focus_dist * tan(degrees_to_radians(defocus_angle / 2.0));
+    const cuda_vec3 defocus_disk_u = defocus_radius * u;
+    const cuda_vec3 defocus_disk_v = defocus_radius * v;
 
-    return cuda_camera{lookfrom, pixel00_loc, pixel_delta_u, pixel_delta_v};
+    return cuda_camera{
+        lookfrom,
+        pixel00_loc,
+        pixel_delta_u,
+        pixel_delta_v,
+        defocus_disk_u,
+        defocus_disk_v,
+        defocus_angle
+    };
 }
 
 __host__ __device__ rgb to_rgb(const cuda_vec3& color, double scale = 1.0) {
@@ -217,6 +232,19 @@ __device__ cuda_vec3 random_in_unit_sphere(unsigned int& state) {
 
 __device__ cuda_vec3 random_unit_vector(unsigned int& state) {
     return unit_vector(random_in_unit_sphere(state));
+}
+
+__device__ cuda_vec3 random_in_unit_disk(unsigned int& state) {
+    while (true) {
+        const cuda_vec3 p = make_vec3(
+            2.0 * random_double(state) - 1.0,
+            2.0 * random_double(state) - 1.0,
+            0.0
+        );
+
+        if (dot(p, p) < 1.0)
+            return p;
+    }
 }
 
 __device__ bool hit_sphere(const cuda_sphere& sphere, const cuda_ray& ray, double t_min, double t_max, double& root) {
@@ -326,8 +354,14 @@ __device__ cuda_ray get_camera_ray(
         camera.pixel00_loc +
         (x + offset_x) * camera.pixel_delta_u +
         (y + offset_y) * camera.pixel_delta_v;
+    cuda_vec3 ray_origin = camera.center;
 
-    return cuda_ray{camera.center, pixel_sample - camera.center};
+    if (camera.defocus_angle > 0.0) {
+        const cuda_vec3 p = random_in_unit_disk(rng_state);
+        ray_origin = camera.center + p.x * camera.defocus_disk_u + p.y * camera.defocus_disk_v;
+    }
+
+    return cuda_ray{ray_origin, pixel_sample - ray_origin};
 }
 
 __device__ cuda_vec3 path_traced_color(
@@ -740,7 +774,8 @@ bool render_cuda_path_traced_spheres(
         make_vec3(0, 0, 0),
         make_vec3(0, 0, -1),
         make_vec3(0, 1, 0),
-        1.0
+        1.0,
+        2.0
     );
 
     rgb* device_pixels = nullptr;
@@ -822,6 +857,7 @@ bool render_cuda_path_traced_spheres(
         << "  lookfrom: 0 0 0\n"
         << "  lookat: 0 0 -1\n"
         << "  focus_dist: 1\n"
+        << "  defocus_angle: 2\n"
         << "  total primary samples: " << total_samples << '\n'
         << "  time: " << elapsed.count() << " seconds\n"
         << "  primary samples/sec: " << (total_samples / elapsed.count()) << '\n';

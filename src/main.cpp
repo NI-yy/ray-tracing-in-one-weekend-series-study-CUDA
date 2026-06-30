@@ -48,7 +48,7 @@ int main() {
     cam.lookfrom = point3(0, 0, 0);
     cam.lookat = point3(0, 0, -1);
     cam.vup = vec3(0, 1, 0);
-    cam.defocus_angle = 0.0;
+    cam.defocus_angle = 2.0;
     cam.focus_dist = 1.0;
 
     cam.render(world, "image_cpu_comparison.ppm");
