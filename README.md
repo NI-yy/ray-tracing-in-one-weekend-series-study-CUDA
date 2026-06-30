@@ -22,22 +22,7 @@ CUDA 版で、コピー元の最終シーンに近い構成を元のサンプル
 
 ![CUDA path traced final result](image_cuda_path_traced_full.png)
 
-## 別角度のレンダリング例
-
-同じ解像度・同じサンプル数のまま、カメラを地面に近い位置まで下げてレンダリングした例です。
-フル設定でも 1 分前後でレンダリングできるため、カメラ位置を変えた試行錯誤を気軽に行えることが確認できました。
-
-![CUDA path traced low camera result](image_cuda_path_traced_low_camera.png)
-
-低いカメラ位置の条件:
-
-- Camera: `lookfrom = (13, 0.6, 3)`, `lookat = (0, 0, 0)`, `vfov = 20`
-- 画像サイズ: `1200 x 675`
-- Samples per pixel: `500`
-- Max depth: `50`
-- CUDA render time: `58.1977` 秒
-
-## 計測結果
+### 計測結果
 
 通常カメラ位置での CUDA 版フルレンダリング条件:
 
@@ -55,6 +40,20 @@ CUDA 版で、コピー元の最終シーンに近い構成を元のサンプル
 - CUDA primary samples/sec: 約 `5.58M`
 
 手元メモの CPU 版実行時間は `11時間42分` だったため、単純比較では約 `580倍` 高速でした。
+
+## 別角度のレンダリング例
+
+同じ解像度・同じサンプル数のまま、カメラを地面に近い位置まで下げてレンダリングした例です。
+
+![CUDA path traced low camera result](image_cuda_path_traced_low_camera.png)
+
+低いカメラ位置の条件:
+
+- Camera: `lookfrom = (13, 0.6, 3)`, `lookat = (0, 0, 0)`, `vfov = 20`
+- 画像サイズ: `1200 x 675`
+- Samples per pixel: `500`
+- Max depth: `50`
+- CUDA render time: `58.1977` 秒
 
 ## ビルドと実行
 
