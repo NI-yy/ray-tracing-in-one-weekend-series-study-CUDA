@@ -20,19 +20,20 @@ Ray Tracing in One Weekend 系列を読みながら実装した CPU 版レイト
 CPU 版と CUDA 版を、次の条件にそろえて比較しました。
 
 - 画像サイズ: 200 x 112
-- Samples per pixel: 20
+- Samples per pixel: 5
 - Max depth: 10
-- Total primary samples: 448,000
-- シーン: 地面 + 大きな球 3 個 + ランダムな小球群
-- 球数: 43
+- Total primary samples: 112,000
+- シーン: コピー元の最終シーンに近い構成
+- 球数: 485
 - マテリアル: Lambertian + Metal + Dielectric
-- Defocus angle: 2.0
+- Camera: `lookfrom = (13, 2, 3)`, `vfov = 20`
+- Defocus angle: 0.6
 
 計測結果:
 
-- CUDA render time: 約 0.33 秒
-- CUDA primary samples/sec: 約 1,356,000
-- CPU render time: 約 5.80 秒
-- CPU primary samples/sec: 約 77,178
+- CUDA render time: 約 0.30 秒
+- CUDA primary samples/sec: 約 379,252
+- CPU render time: 約 13.71 秒
+- CPU primary samples/sec: 約 8,170
 
 詳細な作業ログは `CUDA_SETUP_NOTES.md` にまとめています。

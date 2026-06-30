@@ -212,48 +212,46 @@ __host__ cuda_camera make_camera(
 
 std::vector<cuda_sphere> make_demo_spheres() {
     std::vector<cuda_sphere> spheres{
-        cuda_sphere{make_vec3(0, -100.5, -1), 100.0, make_vec3(0.55, 0.85, 0.35), material_lambertian, 0.0, 1.0},
-        cuda_sphere{make_vec3(0, 0, -1), 0.5, make_vec3(1.0, 1.0, 1.0), material_dielectric, 0.0, 1.5},
-        cuda_sphere{make_vec3(-1.0, 0, -1.2), 0.45, make_vec3(0.2, 0.35, 0.9), material_metal, 0.15, 1.0},
-        cuda_sphere{make_vec3(1.0, 0, -1.2), 0.45, make_vec3(0.9, 0.75, 0.25), material_metal, 0.05, 1.0}
+        cuda_sphere{make_vec3(0, -1000, 0), 1000.0, make_vec3(0.5, 0.5, 0.5), material_lambertian, 0.0, 1.0}
     };
 
     unsigned int rng_state = 0x12345678u;
-    for (int row = 0; row < 6; row++) {
-        for (int column = 0; column < 10; column++) {
-            const double radius = host_random_double(rng_state, 0.07, 0.13);
+    for (int a = -11; a < 11; a++) {
+        for (int b = -11; b < 11; b++) {
             const cuda_vec3 center = make_vec3(
-                -1.8 + column * 0.4 + host_random_double(rng_state, -0.08, 0.08),
-                -0.5 + radius,
-                -0.65 - row * 0.32 + host_random_double(rng_state, -0.08, 0.08)
+                a + 0.9 * host_random_double(rng_state),
+                0.2,
+                b + 0.9 * host_random_double(rng_state)
             );
 
-            if (distance_squared(center, make_vec3(0, 0, -1)) < 0.55 ||
-                distance_squared(center, make_vec3(-1.0, 0, -1.2)) < 0.42 ||
-                distance_squared(center, make_vec3(1.0, 0, -1.2)) < 0.42)
+            if (distance_squared(center, make_vec3(4, 0.2, 0)) <= 0.81)
                 continue;
 
             const double choose_material = host_random_double(rng_state);
-            if (choose_material < 0.65) {
+            if (choose_material < 0.8) {
                 const cuda_vec3 albedo = make_vec3(
-                    host_random_double(rng_state, 0.15, 0.95) * host_random_double(rng_state, 0.15, 0.95),
-                    host_random_double(rng_state, 0.15, 0.95) * host_random_double(rng_state, 0.15, 0.95),
-                    host_random_double(rng_state, 0.15, 0.95) * host_random_double(rng_state, 0.15, 0.95)
+                    host_random_double(rng_state) * host_random_double(rng_state),
+                    host_random_double(rng_state) * host_random_double(rng_state),
+                    host_random_double(rng_state) * host_random_double(rng_state)
                 );
-                spheres.push_back(cuda_sphere{center, radius, albedo, material_lambertian, 0.0, 1.0});
-            } else if (choose_material < 0.9) {
+                spheres.push_back(cuda_sphere{center, 0.2, albedo, material_lambertian, 0.0, 1.0});
+            } else if (choose_material < 0.95) {
                 const cuda_vec3 albedo = make_vec3(
                     host_random_double(rng_state, 0.5, 1.0),
                     host_random_double(rng_state, 0.5, 1.0),
                     host_random_double(rng_state, 0.5, 1.0)
                 );
-                const double fuzz = host_random_double(rng_state, 0.0, 0.35);
-                spheres.push_back(cuda_sphere{center, radius, albedo, material_metal, fuzz, 1.0});
+                const double fuzz = host_random_double(rng_state, 0.0, 0.5);
+                spheres.push_back(cuda_sphere{center, 0.2, albedo, material_metal, fuzz, 1.0});
             } else {
-                spheres.push_back(cuda_sphere{center, radius, make_vec3(1.0, 1.0, 1.0), material_dielectric, 0.0, 1.5});
+                spheres.push_back(cuda_sphere{center, 0.2, make_vec3(1.0, 1.0, 1.0), material_dielectric, 0.0, 1.5});
             }
         }
     }
+
+    spheres.push_back(cuda_sphere{make_vec3(0, 1, 0), 1.0, make_vec3(1.0, 1.0, 1.0), material_dielectric, 0.0, 1.5});
+    spheres.push_back(cuda_sphere{make_vec3(-4, 1, 0), 1.0, make_vec3(0.4, 0.2, 0.1), material_lambertian, 0.0, 1.0});
+    spheres.push_back(cuda_sphere{make_vec3(4, 1, 0), 1.0, make_vec3(0.7, 0.6, 0.5), material_metal, 0.0, 1.0});
 
     return spheres;
 }
@@ -824,12 +822,12 @@ bool render_cuda_path_traced_spheres(
     const cuda_camera camera = make_camera(
         image_width,
         image_height,
-        90.0,
+        20.0,
+        make_vec3(13, 2, 3),
         make_vec3(0, 0, 0),
-        make_vec3(0, 0, -1),
         make_vec3(0, 1, 0),
-        1.0,
-        2.0
+        10.0,
+        0.6
     );
 
     rgb* device_pixels = nullptr;
@@ -907,11 +905,11 @@ bool render_cuda_path_traced_spheres(
         << "  spheres: " << host_spheres.size() << '\n'
         << "  samples_per_pixel: " << samples_per_pixel << '\n'
         << "  max_depth: " << max_depth << '\n'
-        << "  vfov: 90\n"
-        << "  lookfrom: 0 0 0\n"
-        << "  lookat: 0 0 -1\n"
-        << "  focus_dist: 1\n"
-        << "  defocus_angle: 2\n"
+        << "  vfov: 20\n"
+        << "  lookfrom: 13 2 3\n"
+        << "  lookat: 0 0 0\n"
+        << "  focus_dist: 10\n"
+        << "  defocus_angle: 0.6\n"
         << "  total primary samples: " << total_samples << '\n'
         << "  time: " << elapsed.count() << " seconds\n"
         << "  primary samples/sec: " << (total_samples / elapsed.count()) << '\n';

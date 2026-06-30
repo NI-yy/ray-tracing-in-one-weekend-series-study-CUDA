@@ -25,69 +25,67 @@ double demo_random_double(unsigned int& state, double min_value, double max_valu
 
 void add_demo_scene(hittable_list& world) {
     world.add(make_shared<sphere>(
-        point3(0, -100.5, -1),
-        100.0,
-        make_shared<lambertian>(color(0.55, 0.85, 0.35))
-    ));
-    world.add(make_shared<sphere>(
-        point3(0, 0, -1),
-        0.5,
-        make_shared<dielectric>(1.5)
-    ));
-    world.add(make_shared<sphere>(
-        point3(-1.0, 0, -1.2),
-        0.45,
-        make_shared<metal>(color(0.2, 0.35, 0.9), 0.15)
-    ));
-    world.add(make_shared<sphere>(
-        point3(1.0, 0, -1.2),
-        0.45,
-        make_shared<metal>(color(0.9, 0.75, 0.25), 0.05)
+        point3(0, -1000, 0),
+        1000.0,
+        make_shared<lambertian>(color(0.5, 0.5, 0.5))
     ));
 
     unsigned int rng_state = 0x12345678u;
-    for (int row = 0; row < 6; row++) {
-        for (int column = 0; column < 10; column++) {
-            const double radius = demo_random_double(rng_state, 0.07, 0.13);
+    for (int a = -11; a < 11; a++) {
+        for (int b = -11; b < 11; b++) {
             const point3 center(
-                -1.8 + column * 0.4 + demo_random_double(rng_state, -0.08, 0.08),
-                -0.5 + radius,
-                -0.65 - row * 0.32 + demo_random_double(rng_state, -0.08, 0.08)
+                a + 0.9 * demo_random_double(rng_state),
+                0.2,
+                b + 0.9 * demo_random_double(rng_state)
             );
 
-            if ((center - point3(0, 0, -1)).length_squared() < 0.55 ||
-                (center - point3(-1.0, 0, -1.2)).length_squared() < 0.42 ||
-                (center - point3(1.0, 0, -1.2)).length_squared() < 0.42)
+            if ((center - point3(4, 0.2, 0)).length_squared() <= 0.81)
                 continue;
 
             const double choose_material = demo_random_double(rng_state);
-            if (choose_material < 0.65) {
+            if (choose_material < 0.8) {
                 const color albedo(
-                    demo_random_double(rng_state, 0.15, 0.95) * demo_random_double(rng_state, 0.15, 0.95),
-                    demo_random_double(rng_state, 0.15, 0.95) * demo_random_double(rng_state, 0.15, 0.95),
-                    demo_random_double(rng_state, 0.15, 0.95) * demo_random_double(rng_state, 0.15, 0.95)
+                    demo_random_double(rng_state) * demo_random_double(rng_state),
+                    demo_random_double(rng_state) * demo_random_double(rng_state),
+                    demo_random_double(rng_state) * demo_random_double(rng_state)
                 );
-                world.add(make_shared<sphere>(center, radius, make_shared<lambertian>(albedo)));
-            } else if (choose_material < 0.9) {
+                world.add(make_shared<sphere>(center, 0.2, make_shared<lambertian>(albedo)));
+            } else if (choose_material < 0.95) {
                 const color albedo(
                     demo_random_double(rng_state, 0.5, 1.0),
                     demo_random_double(rng_state, 0.5, 1.0),
                     demo_random_double(rng_state, 0.5, 1.0)
                 );
-                const double fuzz = demo_random_double(rng_state, 0.0, 0.35);
-                world.add(make_shared<sphere>(center, radius, make_shared<metal>(albedo, fuzz)));
+                const double fuzz = demo_random_double(rng_state, 0.0, 0.5);
+                world.add(make_shared<sphere>(center, 0.2, make_shared<metal>(albedo, fuzz)));
             } else {
-                world.add(make_shared<sphere>(center, radius, make_shared<dielectric>(1.5)));
+                world.add(make_shared<sphere>(center, 0.2, make_shared<dielectric>(1.5)));
             }
         }
     }
+
+    world.add(make_shared<sphere>(
+        point3(0, 1, 0),
+        1.0,
+        make_shared<dielectric>(1.5)
+    ));
+    world.add(make_shared<sphere>(
+        point3(-4, 1, 0),
+        1.0,
+        make_shared<lambertian>(color(0.4, 0.2, 0.1))
+    ));
+    world.add(make_shared<sphere>(
+        point3(4, 1, 0),
+        1.0,
+        make_shared<metal>(color(0.7, 0.6, 0.5), 0.0)
+    ));
 }
 
 } // namespace
 
 int main() {
 #ifdef RTWEEKEND_CUDA_ENABLED
-    render_cuda_path_traced_spheres("image_cuda_path_traced.ppm", 200, 112, 20, 10);
+    render_cuda_path_traced_spheres("image_cuda_path_traced.ppm", 200, 112, 5, 10);
 #endif
 
     hittable_list world;
@@ -97,14 +95,14 @@ int main() {
 
     cam.aspect_ratio = 200.0 / 112.0;
     cam.image_width = 200;
-    cam.samples_per_pixel = 20;
+    cam.samples_per_pixel = 5;
     cam.max_depth = 10;
-    cam.vfov = 90;
-    cam.lookfrom = point3(0, 0, 0);
-    cam.lookat = point3(0, 0, -1);
+    cam.vfov = 20;
+    cam.lookfrom = point3(13, 2, 3);
+    cam.lookat = point3(0, 0, 0);
     cam.vup = vec3(0, 1, 0);
-    cam.defocus_angle = 2.0;
-    cam.focus_dist = 1.0;
+    cam.defocus_angle = 0.6;
+    cam.focus_dist = 10.0;
 
     cam.render(world, "image_cpu_comparison.ppm");
 }
